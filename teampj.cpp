@@ -24,7 +24,7 @@ glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
 float cameraSpeed = 0.05f;
 
 bool isAmbientLightOn = true; // 주변 조명 상태 (초기값: 켜짐)
-float lightIntensity = 2.0f; // 초기 조명 세기 (기본값: 1.0f)
+float lightIntensity = 4.0f; // 초기 조명 세기 (기본값: 1.0f)
 
 bool isLightOrbiting = false; // 조명이 공전 중인지 여부
 float lightOrbitAngle = 0.0f; // 조명의 회전 각도 (라디안)
@@ -48,6 +48,7 @@ float lightHeight = 3.0f;   // 조명의 y축 높이
 GLuint textures[6]; // 육면체 텍스처
 GLuint pyramidTextures[5]; // 사각뿔 텍스처
 GLuint bgtextures[6];
+GLuint helitextures[1];
 
 char currentShape = 'p';// 'c': 육면체, 'p': 사각뿔
 float rotationX = 0.0f; // x축 회전 각도
@@ -386,6 +387,8 @@ void applyTextures() {
     bgtextures[3] = loadTexture("sky.png");
     bgtextures[4] = loadTexture("sky.png");
     bgtextures[5] = loadTexture("sky.png");
+
+    helitextures[0] = loadTexture("helitexture.png");
 }
 
 void updateLightPosition() {
@@ -493,7 +496,7 @@ void drawScene() {
     // 쉐이더에 모델 행렬 전송
     glUniformMatrix4fv(glGetUniformLocation(shaderID, "model"), 1, GL_FALSE, glm::value_ptr(heliModel));
     applyMaterial(4, 0); // 헬리콥터 재질 적용
-
+    glBindTexture(GL_TEXTURE_2D, helitextures[0]);
     // 헬리콥터 그리기
     glDrawElements(GL_TRIANGLES, objIndexCounts[1], GL_UNSIGNED_INT, 0);
 
