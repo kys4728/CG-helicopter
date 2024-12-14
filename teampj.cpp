@@ -1,4 +1,4 @@
-#define _CRT_SECURE_NO_WARNINGS
+﻿#define _CRT_SECURE_NO_WARNINGS
 #define STB_IMAGE_IMPLEMENTATION
 #include <iostream>
 #include <vector>
@@ -36,11 +36,6 @@ float lightOrbitRadius = 3.0f; // 초기 반경 설정
 glm::vec3 lightInitialPos = glm::vec3(0.0f, 3.0f, 3.0f); // 초기 조명 위치
 glm::vec3 lightPos = lightInitialPos; // 현재 조명 위치
 
-// 헬리콥터의 y축 위치 변수
-float heliY = 2.0f; // 초기 위치 설정
-float heliX = 0.0f; // 헬리콥터의 초기 X축 위치
-
-bool isRKeyPressed = false;
 
 glm::vec3 lightColors[] = {
     glm::vec3(1.0f, 1.0f, 1.0f),
@@ -58,6 +53,8 @@ GLuint pyramidTextures[5]; // 사각뿔 텍스처
 GLuint bgtextures[6];
 GLuint helitextures[1];
 GLuint wingtextures[1];
+GLuint groundtextures[1];
+GLuint cloudtextures[1];
 
 float rotationX = 0.0f; // x축 회전 각도
 float rotationY = 0.0f; // y축 회전 각도
@@ -68,6 +65,23 @@ float wingRotationSpeed = 0.0f; // 날개의 현재 회전 속도
 float wingAcceleration = 0.0001f; // 날개의 가속도 (초기값)
 
 bool isHelicopterControlEnabled = false;
+
+// 헬리콥터의 y축 위치 변수
+float heliY = 0.0f; // 초기 위치 설정
+float heliX = 0.0f; // 헬리콥터의 초기 X축 위치
+float heliZ = 0.0f; // 초기 Z축 위치
+
+bool isRKeyPressed = false;
+float tiltAngle = 0.0f; // 헬리콥터의 기울기 각도
+float rollAngle = 0.0f; // 헬리콥터의 Z축 기울기 각도
+
+bool isFirstPersonView = false; // 초기값: 3인칭 시점
+
+const float HELI_BOUNDARY_MIN_XZ = -35.0f; // X, Z 최소 경계
+const float HELI_BOUNDARY_MAX_XZ = 35.0f;  // X, Z 최대 경계
+const float HELI_BOUNDARY_MIN_Y = 0.0f;    // Y 최소 경계
+const float HELI_BOUNDARY_MAX_Y = 28.0f;   // Y 최대 경계
+
 
 char* filetobuf(const char* file) {
     FILE* fptr;
@@ -380,13 +394,7 @@ void applyMaterial(int objIndex, int materialIndex) {
 void applyTextures() {
 
     // 육면체 텍스처 (6면)
-    textures[0] = loadTexture("cube.png"); // 앞면
-    textures[1] = loadTexture("cube.png"); // 뒷면
-    textures[2] = loadTexture("cube.png"); // 윗면
-    textures[3] = loadTexture("cube.png"); // 아랫면
-    textures[4] = loadTexture("cube.png"); // 왼쪽면
-    textures[5] = loadTexture("cube.png"); // 오른쪽면
-
+    textures[0] = loadTexture("platform.png"); // 앞면
 
     bgtextures[0] = loadTexture("sky.png");
     bgtextures[1] = loadTexture("sky.png");
@@ -397,6 +405,8 @@ void applyTextures() {
 
     helitextures[0] = loadTexture("helitexture.png");
     wingtextures[0] = loadTexture("wing.png");
+    groundtextures[0] = loadTexture("ground.png");
+    cloudtextures[0] = loadTexture("cloud.png");
 }
 
 // 헬리콥터를 따라다니는 카메라 업데이트 함수
@@ -404,17 +414,55 @@ void updateCameraPosition() {
     float distanceBehindHelicopter = 10.0f; // 헬리콥터 뒤쪽 거리
     float heightAboveHelicopter = 5.0f;     // 헬리콥터 위쪽 높이
 
-    // 카메라 위치를 헬리콥터 기준으로 설정
-    cameraPos = glm::vec3(heliX, heliY + heightAboveHelicopter, 5.0f - distanceBehindHelicopter);
+    if (isFirstPersonView) {
+        // 1인칭 시점: 헬리콥터 앞쪽과 약간 위로 위치
+        cameraPos = glm::vec3(
+            heliX,
+            heliY,
+            heliZ
+        );
 
-    // 카메라 방향은 헬리콥터를 바라보도록 설정
-    glm::vec3 helicopterPosition = glm::vec3(heliX, heliY, 5.0f);
-    cameraFront = glm::normalize(helicopterPosition - cameraPos);
+        // 1인칭 카메라 방향: 헬리콥터의 현재 방향을 따라감
+        cameraFront = glm::vec3(
+            sin(rotationY), // x축 방향
+            0.0f,           // y축 고정
+            cos(rotationY) // z축 방향 (반대 방향 고려)
+        );
 
-    // 카메라의 상향 벡터는 고정
-    cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
+        cameraPos += cameraFront * 2.0f;
+        cameraUp = glm::vec3(0.0f, 1.0f, 0.0f); // 상향 벡터 유지
+    }
+    else {
+        // 3인칭 시점: 헬리콥터를 따라다니는 카메라
+        glm::vec3 helicopterPosition = glm::vec3(heliX, heliY, heliZ);
+
+        float offsetX = distanceBehindHelicopter * sin(rotationY);
+        float offsetZ = distanceBehindHelicopter * cos(rotationY);
+
+        cameraPos = glm::vec3(
+            heliX - offsetX,
+            heliY + heightAboveHelicopter,
+            heliZ - offsetZ
+        );
+
+        cameraFront = glm::normalize(helicopterPosition - cameraPos); // 헬리콥터를 바라보는 방향
+        cameraUp = glm::vec3(0.0f, 1.0f, 0.0f); // 상향 벡터 유지
+    }
 }
 
+void enforceHelicopterBoundaries() {
+    // X축 경계 확인
+    if (heliX < HELI_BOUNDARY_MIN_XZ) heliX = HELI_BOUNDARY_MIN_XZ;
+    if (heliX > HELI_BOUNDARY_MAX_XZ) heliX = HELI_BOUNDARY_MAX_XZ;
+
+    // Z축 경계 확인
+    if (heliZ < HELI_BOUNDARY_MIN_XZ) heliZ = HELI_BOUNDARY_MIN_XZ;
+    if (heliZ > HELI_BOUNDARY_MAX_XZ) heliZ = HELI_BOUNDARY_MAX_XZ;
+
+    // Y축 경계 확인
+    if (heliY < HELI_BOUNDARY_MIN_Y) heliY = HELI_BOUNDARY_MIN_Y;
+    if (heliY > HELI_BOUNDARY_MAX_Y) heliY = HELI_BOUNDARY_MAX_Y;
+}
 void drawScene() {
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -445,13 +493,11 @@ void drawScene() {
     glUniform3fv(glGetUniformLocation(shaderID, "viewPos"), 1, glm::value_ptr(cameraPos));
     glUniform1f(glGetUniformLocation(shaderID, "uvScale"), 1.0f);
 
-    // 조명 렌더링
-
     glDepthMask(GL_FALSE);
     glBindVertexArray(objVAOs[0]);
     for (int i = 0; i < 6; ++i) {
         glm::mat4 bgModel = glm::mat4(1.0f);
-        bgModel = glm::scale(bgModel, glm::vec3(-11.0f));
+        bgModel = glm::scale(bgModel, glm::vec3(-30.0f));
         glUniformMatrix4fv(glGetUniformLocation(shaderID, "model"), 1, GL_FALSE, glm::value_ptr(bgModel));
         applyMaterial(0, objMaterialIndices[0][i]);
         glBindTexture(GL_TEXTURE_2D, bgtextures[i]);
@@ -459,12 +505,77 @@ void drawScene() {
     }
     glDepthMask(GL_TRUE);
 
+
+    glBindVertexArray(objVAOs[0]);
+    glm::mat4 bgModel = glm::mat4(1.0f);
+    bgModel = glm::translate(bgModel, glm::vec3(0.0f, -0.9f, 0.0f));
+    bgModel = glm::scale(bgModel, glm::vec3(2.0f, 0.2f, 2.0f));
+
+    glUniformMatrix4fv(glGetUniformLocation(shaderID, "model"), 1, GL_FALSE, glm::value_ptr(bgModel));
+    applyMaterial(4, 0);
+    glBindTexture(GL_TEXTURE_2D, textures[0]);
+    glDrawElements(GL_TRIANGLES, objIndexCounts[2], GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
+
+
+    glBindVertexArray(objVAOs[0]);
+    glm::mat4 platModel = glm::mat4(1.0f);
+    platModel = glm::translate(platModel, glm::vec3(0.0f, -0.9f, 0.0f));
+    platModel = glm::scale(platModel, glm::vec3(30.0f, 0.0f, 30.0f));
+
+    glUniformMatrix4fv(glGetUniformLocation(shaderID, "model"), 1, GL_FALSE, glm::value_ptr(platModel));
+    applyMaterial(4, 0);
+    glBindTexture(GL_TEXTURE_2D, groundtextures[0]);
+    glDrawElements(GL_TRIANGLES, objIndexCounts[2], GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
+
+    glBindVertexArray(objVAOs[0]);
+    glm::mat4 clModel = glm::mat4(1.0f);
+    clModel = glm::translate(clModel, glm::vec3(3.0f, 10.0f, 15.0f));
+    clModel = glm::scale(clModel, glm::vec3(1.0f, 1.0f, 1.0f));
+   
+    glUniformMatrix4fv(glGetUniformLocation(shaderID, "model"), 1, GL_FALSE, glm::value_ptr(clModel));
+    applyMaterial(4, 0);
+    glBindTexture(GL_TEXTURE_2D, cloudtextures[0]);
+    glDrawElements(GL_TRIANGLES, objIndexCounts[2], GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
+
+    glBindVertexArray(objVAOs[0]);
+    glm::mat4 cl2Model = glm::mat4(1.0f);
+    cl2Model = glm::translate(cl2Model, glm::vec3(3.0f, 9.5f, 15.0f));
+    cl2Model = glm::scale(cl2Model, glm::vec3(1.0f, 1.0f, 1.0f));
+
+    glUniformMatrix4fv(glGetUniformLocation(shaderID, "model"), 1, GL_FALSE, glm::value_ptr(cl2Model));
+    applyMaterial(4, 0);
+    glBindTexture(GL_TEXTURE_2D, cloudtextures[0]);
+    glDrawElements(GL_TRIANGLES, objIndexCounts[2], GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
+
+    glBindVertexArray(objVAOs[0]);
+    glm::mat4 cl3Model = glm::mat4(1.0f);
+    cl3Model = glm::translate(cl3Model, glm::vec3(3.5f, 10.5f, 15.5f));
+    cl3Model = glm::scale(cl3Model, glm::vec3(1.0f, 1.0f, 1.0f));
+
+    glUniformMatrix4fv(glGetUniformLocation(shaderID, "model"), 1, GL_FALSE, glm::value_ptr(cl3Model));
+    applyMaterial(4, 0);
+    glBindTexture(GL_TEXTURE_2D, cloudtextures[0]);
+    glDrawElements(GL_TRIANGLES, objIndexCounts[2], GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
+
     glBindVertexArray(objVAOs[1]);
     // 헬리콥터 그리기
     glm::mat4 heliModel = glm::mat4(1.0f);
 
     // 헬리콥터 위치 설정
-    heliModel = glm::translate(heliModel, glm::vec3(heliX, heliY, 5.0f));
+    heliModel = glm::translate(heliModel, glm::vec3(heliX, heliY, heliZ));
+
+    // 헬리콥터 Y축 회전 적용
+    heliModel = glm::rotate(heliModel, rotationY, glm::vec3(0.0f, 1.0f, 0.0f));
+    // 헬리콥터 X축 기울기 적용
+    heliModel = glm::rotate(heliModel, tiltAngle, glm::vec3(1.0f, 0.0f, 0.0f));
+    // 헬리콥터 Z축 기울기 적용
+    heliModel = glm::rotate(heliModel, rollAngle, glm::vec3(0.0f, 0.0f, 1.0f));
+
     // 크기 조정
     heliModel = glm::scale(heliModel, glm::vec3(1.0f));
 
@@ -475,8 +586,8 @@ void drawScene() {
     // 헬리콥터 그리기
     glDrawElements(GL_TRIANGLES, objIndexCounts[1], GL_UNSIGNED_INT, 0);
 
-
     glBindVertexArray(0);
+
     // 날개 그리기
     glBindVertexArray(objVAOs[2]);
     glm::mat4 wingModel = heliModel; // 헬리콥터 모델 행렬을 기반으로 함
@@ -505,6 +616,30 @@ void drawScene() {
 
     glBindVertexArray(0);
 
+    // 클라우드의 로컬 좌표에서 AABB 설정 (모델 공간에서의 크기)
+    glm::vec3 cloudLocalMin(-0.5f, -0.5f, -0.5f); // 클라우드 모델의 최소 좌표
+    glm::vec3 cloudLocalMax(0.5f, 0.5f, 0.5f);   // 클라우드 모델의 최대 좌표
+
+    // 클라우드 월드 공간에서의 AABB 계산
+    glm::vec3 cloudWorldMin = glm::vec3(clModel * glm::vec4(cloudLocalMin, 1.0f));
+    glm::vec3 cloudWorldMax = glm::vec3(clModel * glm::vec4(cloudLocalMax, 1.0f));
+    // 헬리콥터의 로컬 좌표에서 AABB 설정 (모델 공간에서의 크기)
+    glm::vec3 heliLocalMin(-0.5f, -0.5f, -0.5f); // 헬리콥터 모델의 최소 좌표
+    glm::vec3 heliLocalMax(0.5f, 0.5f, 0.5f);   // 헬리콥터 모델의 최대 좌표
+
+    // 헬리콥터 월드 공간에서의 AABB 계산
+    glm::vec3 heliWorldMin = glm::vec3(heliModel * glm::vec4(heliLocalMin, 1.0f));
+    glm::vec3 heliWorldMax = glm::vec3(heliModel * glm::vec4(heliLocalMax, 1.0f));
+    // 충돌 감지 (AABB 충돌 체크)
+    bool isColliding = (heliWorldMin.x <= cloudWorldMax.x && heliWorldMax.x >= cloudWorldMin.x) &&
+        (heliWorldMin.y <= cloudWorldMax.y && heliWorldMax.y >= cloudWorldMin.y) &&
+        (heliWorldMin.z <= cloudWorldMax.z && heliWorldMax.z >= cloudWorldMin.z);
+
+    if (isColliding) {
+        std::cout << "Helicopter reached the cloud. Exiting program." << std::endl;
+        exit(0); // 프로그램 종료
+    }
+
 
     glutSwapBuffers();
 }
@@ -520,18 +655,21 @@ GLvoid Reshape(int w, int h) {
 
 GLvoid KeyBoard(unsigned char key, int x, int y) {
     const float movementStep = 0.1f; // 이동 간격
+    const float rotationStep = glm::radians(3.0f); // 회전 각도 (5도)
+
     auto currentTime = std::chrono::steady_clock::now(); // 현재 시간 저장
 
     switch (key) {
     case 'q':
         exit(0); // 프로그램 종료
         break;
+
     case 32: // 스페이스바 입력시 날개 자동 회전 토글 및 조작 활성화 시작
         isWingAutoRotate = !isWingAutoRotate;
-        lastRKeyTime = currentTime; // r 키를 누른 시간을 저장
-        isRKeyPressed = true;       // r 키가 눌렸음을 기록
-        isHelicopterControlEnabled = false; // r 입력 시 조작 비활성화
-        std::cout << "Helicopter control will be enabled after 15 seconds." << std::endl;
+        lastRKeyTime = currentTime; 
+        isRKeyPressed = true;       
+        isHelicopterControlEnabled = false; 
+        std::cout << "Helicopter control will be enabled after 8 seconds." << std::endl;
         if (isWingAutoRotate) {
             wingRotationSpeed = 0.0f; // 초기 속도 설정
             std::cout << "Wing auto rotation enabled with acceleration." << std::endl;
@@ -540,9 +678,18 @@ GLvoid KeyBoard(unsigned char key, int x, int y) {
             std::cout << "Wing auto rotation disabled." << std::endl;
         }
         break;
-
+    case 'v': // V 키를 눌렀을 때 시점 전환
+        isFirstPersonView = !isFirstPersonView;
+        if (isFirstPersonView) {
+            std::cout << "First-person view enabled." << std::endl;
+        }
+        else {
+            std::cout << "Third-person view enabled." << std::endl;
+        }
+        break;
         // 위로 이동
     case 'w':
+        enforceHelicopterBoundaries();
         if (!isRKeyPressed) {
             std::cout << "Cannot move. Press 'r' to enable helicopter control." << std::endl;
         }
@@ -552,19 +699,20 @@ GLvoid KeyBoard(unsigned char key, int x, int y) {
         }
         else {
             auto elapsedTime = std::chrono::duration_cast<std::chrono::seconds>(currentTime - lastRKeyTime).count();
-            if (elapsedTime >= 15) {
+            if (elapsedTime >= 8) {
                 isHelicopterControlEnabled = true;
                 heliY += movementStep;
                 std::cout << "Helicopter moved up. Current Y position: " << heliY << std::endl;
             }
             else {
-                std::cout << "Cannot move. Please wait for " << (15 - elapsedTime) << " seconds." << std::endl;
+                std::cout << "Cannot move. Please wait for " << (8 - elapsedTime) << " seconds." << std::endl;
             }
         }
         break;
 
         // 아래로 이동
     case 's':
+        enforceHelicopterBoundaries();
         if (!isRKeyPressed) {
             std::cout << "Cannot move. Press 'r' to enable helicopter control." << std::endl;
         }
@@ -574,7 +722,7 @@ GLvoid KeyBoard(unsigned char key, int x, int y) {
         }
         else {
             auto elapsedTime = std::chrono::duration_cast<std::chrono::seconds>(currentTime - lastRKeyTime).count();
-            if (elapsedTime >= 15) {
+            if (elapsedTime >= 8) {
                 isHelicopterControlEnabled = true;
                 heliY -= movementStep;
                 std::cout << "Helicopter moved down. Current Y position: " << heliY << std::endl;
@@ -584,47 +732,26 @@ GLvoid KeyBoard(unsigned char key, int x, int y) {
             }
         }
         break;
-
-        // 오른쪽으로 이동
-    case 'd':
+    case 'a': // 왼쪽 회전
+    case 'd': // 오른쪽 회전
         if (!isRKeyPressed) {
-            std::cout << "Cannot move. Press 'r' to enable helicopter control." << std::endl;
+            std::cout << "Cannot rotate. Press 'r' to enable helicopter control." << std::endl;
         }
         else if (isHelicopterControlEnabled) {
-            heliX -= movementStep;
-            std::cout << "Helicopter moved left. Current X position: " << heliX << std::endl;
+            if (key == 'a') rotationY += rotationStep;
+            if (key == 'd') rotationY -= rotationStep;
+            std::cout << "Helicopter rotated. Current Y rotation: " << glm::degrees(rotationY) << " degrees." << std::endl;
         }
         else {
             auto elapsedTime = std::chrono::duration_cast<std::chrono::seconds>(currentTime - lastRKeyTime).count();
-            if (elapsedTime >= 15) {
+            if (elapsedTime >= 8) {
                 isHelicopterControlEnabled = true;
-                heliX -= movementStep;
-                std::cout << "Helicopter moved left. Current X position: " << heliX << std::endl;
+                if (key == 'a') rotationY += rotationStep;
+                if (key == 'd') rotationY -= rotationStep;
+                std::cout << "Helicopter rotated. Current Y rotation: " << glm::degrees(rotationY) << " degrees." << std::endl;
             }
             else {
-                std::cout << "Cannot move. Please wait for " << (15 - elapsedTime) << " seconds." << std::endl;
-            }
-        }
-        break;
-
-        // 왼쪽으로 이동
-    case 'a':
-        if (!isRKeyPressed) {
-            std::cout << "Cannot move. Press 'r' to enable helicopter control." << std::endl;
-        }
-        else if (isHelicopterControlEnabled) {
-            heliX += movementStep;
-            std::cout << "Helicopter moved right. Current X position: " << heliX << std::endl;
-        }
-        else {
-            auto elapsedTime = std::chrono::duration_cast<std::chrono::seconds>(currentTime - lastRKeyTime).count();
-            if (elapsedTime >= 15) {
-                isHelicopterControlEnabled = true;
-                heliX += movementStep;
-                std::cout << "Helicopter moved right. Current X position: " << heliX << std::endl;
-            }
-            else {
-                std::cout << "Cannot move. Please wait for " << (15 - elapsedTime) << " seconds." << std::endl;
+                std::cout << "Cannot rotate. Please wait for " << (8 - elapsedTime) << " seconds." << std::endl;
             }
         }
         break;
@@ -635,6 +762,116 @@ GLvoid KeyBoard(unsigned char key, int x, int y) {
     // 화면 갱신 요청
     glutPostRedisplay();
 }
+
+GLvoid SpecialKey(int key, int x, int y) {
+    const float movementStep = 0.05f; // 이동 간격
+
+    // 시동 여부 확인
+    if (!isWingAutoRotate) {
+        std::cout << "Cannot move. Start the helicopter by pressing the spacebar." << std::endl;
+        return;
+    }
+
+    auto currentTime = std::chrono::steady_clock::now(); // 현재 시간 저장
+    auto elapsedTime = std::chrono::duration_cast<std::chrono::seconds>(currentTime - lastRKeyTime).count();
+
+    if (!isHelicopterControlEnabled && elapsedTime < 8) {
+        std::cout << "Cannot move. Please wait for " << (8 - elapsedTime) << " seconds." << std::endl;
+        return;
+    }
+
+    if (elapsedTime >= 8) {
+        isHelicopterControlEnabled = true; // 조작 활성화
+    }
+
+    // 현재 회전 각도에 따라 이동 방향 계산
+    glm::vec3 forwardDir = glm::vec3(sin(rotationY), 0.0f, cos(rotationY)); // 전진 방향
+    glm::vec3 rightDir = glm::vec3(cos(rotationY), 0.0f, -sin(rotationY));  // 오른쪽 방향
+
+    switch (key) {
+    case GLUT_KEY_UP: // 위쪽 화살표 입력 시 (앞으로 전진)
+        heliX += forwardDir.x * movementStep;
+        heliZ += forwardDir.z * movementStep;
+        tiltAngle = glm::radians(30.0f); // 전진 시 앞으로 기울기
+        break;
+
+    case GLUT_KEY_DOWN: // 아래쪽 화살표 입력 시 (뒤로 후진)
+        heliX -= forwardDir.x * movementStep;
+        heliZ -= forwardDir.z * movementStep;
+        tiltAngle = glm::radians(-30.0f); // 후진 시 뒤로 기울기
+        break;
+
+    case GLUT_KEY_RIGHT: // 오른쪽 화살표 입력 시 (오른쪽 이동)
+        heliX -= rightDir.x * movementStep;
+        heliZ -= rightDir.z * movementStep;
+        rollAngle = glm::radians(30.0f); // 오른쪽으로 기울기
+        break;
+
+    case GLUT_KEY_LEFT: // 왼쪽 화살표 입력 시 (왼쪽 이동)
+        heliX += rightDir.x * movementStep;
+        heliZ += rightDir.z * movementStep;
+        rollAngle = glm::radians(-30.0f); // 왼쪽으로 기울기
+        break;
+
+    default:
+        tiltAngle = glm::radians(0.0f); // 기울기 초기화
+        rollAngle = glm::radians(0.0f);
+        break;
+    }
+
+    // 헬리콥터 현재 위치 출력
+    std::cout << "Helicopter position: (" << heliX << ", " << heliY << ", " << heliZ << ")" << std::endl;
+
+    // 경계 충돌 처리
+    enforceHelicopterBoundaries();
+
+    // 카메라 위치 업데이트
+    updateCameraPosition();
+
+    // 화면 갱신 요청
+    glutPostRedisplay();
+}
+
+GLvoid SpecialKeyUp(int key, int x, int y) {
+    switch (key) {
+    case GLUT_KEY_UP:
+    case GLUT_KEY_DOWN:
+        tiltAngle = 0.0f; // 전진/후진 기울기 초기화
+        break;
+    case GLUT_KEY_LEFT:
+    case GLUT_KEY_RIGHT:
+        rollAngle = 0.0f; // 좌우 기울기 초기화
+        break;
+    default:
+        break;
+    }
+    glutPostRedisplay(); // 화면 갱신 요청
+}
+void updateHelicopterState() {
+    const float returnSpeed = 0.0001f; // 기울기 복귀 속도
+
+    // X축 기울기 복귀
+    if (tiltAngle > 0.0f) {
+        tiltAngle -= returnSpeed;
+        if (tiltAngle < 0.0f) tiltAngle = 0.0f;
+    }
+    else if (tiltAngle < 0.0f) {
+        tiltAngle += returnSpeed;
+        if (tiltAngle > 0.0f) tiltAngle = 0.0f;
+    }
+
+    // Z축 기울기 복귀
+    if (rollAngle > 0.0f) {
+        rollAngle -= returnSpeed;
+        if (rollAngle < 0.0f) rollAngle = 0.0f;
+    }
+    else if (rollAngle < 0.0f) {
+        rollAngle += returnSpeed;
+        if (rollAngle > 0.0f) rollAngle = 0.0f;
+    }
+    glutPostRedisplay(); // 화면 갱신 요청
+}
+
 
 int main(int argc, char** argv) {
     glutInit(&argc, argv);
@@ -666,6 +903,8 @@ int main(int argc, char** argv) {
     glutDisplayFunc(display);
     glutReshapeFunc(Reshape);
     glutKeyboardFunc(KeyBoard);
+    glutSpecialFunc(SpecialKey);
+    glutSpecialUpFunc(SpecialKeyUp); // 키 릴리스 이벤트 등록
     glutIdleFunc([]() {
         if (isWingAutoRotate) {
             // 날개의 회전 속도 증가
@@ -675,6 +914,8 @@ int main(int argc, char** argv) {
             }
             glutPostRedisplay(); // 화면 갱신 요청
         }
+        // 헬리콥터 상태 업데이트 (기울기 복귀)
+        updateHelicopterState();
         });
 
     glutMainLoop();
