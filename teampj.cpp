@@ -9,52 +9,65 @@
 #include <gl/glm/gtc/type_ptr.hpp>
 #include "tiny_obj_loader.h"
 #include "stb_image.h"
+#include <chrono>
 
 #define TINYOBJLOADER_IMPLEMENTATION
+std::chrono::steady_clock::time_point lastRKeyTime;
 
 GLuint shaderID;
-GLuint objVAOs[20], objVBOs[20], objEBOs[20]; // 20°³·Î Áõ°¡
+GLuint objVAOs[20], objVBOs[20], objEBOs[20]; // 20ê°œë¡œ ì¦ê°€
 GLuint objIndexCounts[20];
-std::vector<int> objMaterialIndices[20]; // °¢ OBJ ÆÄÀÏÀÇ ÀçÁú ÀÎµ¦½º ¹è¿­
+std::vector<int> objMaterialIndices[20]; // ê° OBJ íŒŒì¼ì˜ ì¬ì§ˆ ì¸ë±ìŠ¤ ë°°ì—´
 std::vector<tinyobj::material_t> globalMaterials[20];
 
-glm::vec3 cameraPos = glm::vec3(0.0f, 2.0f, 10.0f);
-glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
+glm::vec3 cameraPos = glm::vec3(0.0f, 4.0f, -5.0f);
+glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, 1.0f);
 glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
 float cameraSpeed = 0.05f;
 
-bool isAmbientLightOn = true; // ÁÖº¯ Á¶¸í »óÅÂ (ÃÊ±â°ª: ÄÑÁü)
-float lightIntensity = 4.0f; // ÃÊ±â Á¶¸í ¼¼±â (±âº»°ª: 1.0f)
+bool isAmbientLightOn = true; // ì£¼ë³€ ì¡°ëª… ìƒíƒœ (ì´ˆê¸°ê°’: ì¼œì§)
+float lightIntensity = 4.0f; // ì´ˆê¸° ì¡°ëª… ì„¸ê¸° (ê¸°ë³¸ê°’: 1.0f)
 
-bool isLightOrbiting = false; // Á¶¸íÀÌ °øÀü ÁßÀÎÁö ¿©ºÎ
-float lightOrbitAngle = 0.0f; // Á¶¸íÀÇ È¸Àü °¢µµ (¶óµğ¾È)
-bool isOrbitingClockwise = true; // °øÀü ¹æÇâ »óÅÂ (true: ½Ã°è ¹æÇâ, false: ¹İ½Ã°è ¹æÇâ)
-float lightOrbitRadius = 3.0f; // ÃÊ±â ¹İ°æ ¼³Á¤
+bool isLightOrbiting = false; // ì¡°ëª…ì´ ê³µì „ ì¤‘ì¸ì§€ ì—¬ë¶€
+float lightOrbitAngle = 0.0f; // ì¡°ëª…ì˜ íšŒì „ ê°ë„ (ë¼ë””ì•ˆ)
+bool isOrbitingClockwise = true; // ê³µì „ ë°©í–¥ ìƒíƒœ (true: ì‹œê³„ ë°©í–¥, false: ë°˜ì‹œê³„ ë°©í–¥)
+float lightOrbitRadius = 3.0f; // ì´ˆê¸° ë°˜ê²½ ì„¤ì •
 
-glm::vec3 lightInitialPos = glm::vec3(0.0f, 3.0f, 3.0f); // ÃÊ±â Á¶¸í À§Ä¡
-glm::vec3 lightPos = lightInitialPos; // ÇöÀç Á¶¸í À§Ä¡
+glm::vec3 lightInitialPos = glm::vec3(0.0f, 3.0f, 3.0f); // ì´ˆê¸° ì¡°ëª… ìœ„ì¹˜
+glm::vec3 lightPos = lightInitialPos; // í˜„ì¬ ì¡°ëª… ìœ„ì¹˜
+
+// í—¬ë¦¬ì½¥í„°ì˜ yì¶• ìœ„ì¹˜ ë³€ìˆ˜
+float heliY = 2.0f; // ì´ˆê¸° ìœ„ì¹˜ ì„¤ì •
+float heliX = 0.0f; // í—¬ë¦¬ì½¥í„°ì˜ ì´ˆê¸° Xì¶• ìœ„ì¹˜
+
+bool isRKeyPressed = false;
 
 glm::vec3 lightColors[] = {
     glm::vec3(1.0f, 1.0f, 1.0f),
     glm::vec3(1.0f, 0.0f, 0.0f),
-    glm::vec3(0.0f, 1.0f, 0.0f), // ÃÊ·Ï
-    glm::vec3(0.0f, 0.0f, 1.0f)  // ÆÄ¶û
+    glm::vec3(0.0f, 1.0f, 0.0f), // ì´ˆë¡
+    glm::vec3(0.0f, 0.0f, 1.0f)  // íŒŒë‘
 };
 
-int currentLightColorIndex = 0; // ÇöÀç »ö»ó ÀÎµ¦½º
-int lightPositionIndex = 0; // ÃÊ±â À§Ä¡ ÀÎµ¦½º (0~3)
-float lightHeight = 3.0f;   // Á¶¸íÀÇ yÃà ³ôÀÌ
+int currentLightColorIndex = 0; // í˜„ì¬ ìƒ‰ìƒ ì¸ë±ìŠ¤
+int lightPositionIndex = 0; // ì´ˆê¸° ìœ„ì¹˜ ì¸ë±ìŠ¤ (0~3)
+float lightHeight = 3.0f;   // ì¡°ëª…ì˜ yì¶• ë†’ì´
 
-GLuint textures[6]; // À°¸éÃ¼ ÅØ½ºÃ³
-GLuint pyramidTextures[5]; // »ç°¢»Ô ÅØ½ºÃ³
+GLuint textures[6]; // ìœ¡ë©´ì²´ í…ìŠ¤ì²˜
+GLuint pyramidTextures[5]; // ì‚¬ê°ë¿” í…ìŠ¤ì²˜
 GLuint bgtextures[6];
 GLuint helitextures[1];
+GLuint wingtextures[1];
 
-char currentShape = 'p';// 'c': À°¸éÃ¼, 'p': »ç°¢»Ô
-float rotationX = 0.0f; // xÃà È¸Àü °¢µµ
-float rotationY = 0.0f; // yÃà È¸Àü °¢µµ
+float rotationX = 0.0f; // xì¶• íšŒì „ ê°ë„
+float rotationY = 0.0f; // yì¶• íšŒì „ ê°ë„
 
-float lightScale = 1.5f; // ±âº»°ª
+float lightScale = 1.5f; // ê¸°ë³¸ê°’
+bool isWingAutoRotate = false; // ë‚ ê°œì˜ ìë™ íšŒì „ ìƒíƒœ
+float wingRotationSpeed = 0.0f; // ë‚ ê°œì˜ í˜„ì¬ íšŒì „ ì†ë„
+float wingAcceleration = 0.0001f; // ë‚ ê°œì˜ ê°€ì†ë„ (ì´ˆê¸°ê°’)
+
+bool isHelicopterControlEnabled = false;
 
 char* filetobuf(const char* file) {
     FILE* fptr;
@@ -140,7 +153,7 @@ void loadObj(const std::string& filename,
             tinyobj::index_t idx1 = shape.mesh.indices[i + 1];
             tinyobj::index_t idx2 = shape.mesh.indices[i + 2];
 
-            // Á¤Á¡ ÁÂÇ¥
+            // ì •ì  ì¢Œí‘œ
             glm::vec3 v0(attrib.vertices[3 * idx0.vertex_index + 0],
                 attrib.vertices[3 * idx0.vertex_index + 1],
                 attrib.vertices[3 * idx0.vertex_index + 2]);
@@ -151,7 +164,7 @@ void loadObj(const std::string& filename,
                 attrib.vertices[3 * idx2.vertex_index + 1],
                 attrib.vertices[3 * idx2.vertex_index + 2]);
 
-            // ¹ı¼± °è»ê
+            // ë²•ì„  ê³„ì‚°
             glm::vec3 edge1 = v1 - v0;
             glm::vec3 edge2 = v2 - v0;
             glm::vec3 faceNormal = glm::normalize(glm::cross(edge1, edge2));
@@ -160,7 +173,7 @@ void loadObj(const std::string& filename,
             tempNormals[idx1.vertex_index] += faceNormal;
             tempNormals[idx2.vertex_index] += faceNormal;
 
-            // ÅØ½ºÃ³ ÁÂÇ¥
+            // í…ìŠ¤ì²˜ ì¢Œí‘œ
             glm::vec2 uv0(0.0f, 0.0f);
             glm::vec2 uv1(0.0f, 0.0f);
             glm::vec2 uv2(0.0f, 0.0f);
@@ -178,7 +191,7 @@ void loadObj(const std::string& filename,
                 uv2.y = 1.0f - attrib.texcoords[2 * idx2.texcoord_index + 1];
             }
 
-            // Á¤Á¡ µ¥ÀÌÅÍ Ãß°¡ (v0, uv0)
+            // ì •ì  ë°ì´í„° ì¶”ê°€ (v0, uv0)
             vertices.push_back(v0.x);
             vertices.push_back(v0.y);
             vertices.push_back(v0.z);
@@ -188,7 +201,7 @@ void loadObj(const std::string& filename,
             vertices.push_back(uv0.x);
             vertices.push_back(uv0.y);
 
-            // Á¤Á¡ µ¥ÀÌÅÍ Ãß°¡ (v1, uv1)
+            // ì •ì  ë°ì´í„° ì¶”ê°€ (v1, uv1)
             vertices.push_back(v1.x);
             vertices.push_back(v1.y);
             vertices.push_back(v1.z);
@@ -198,7 +211,7 @@ void loadObj(const std::string& filename,
             vertices.push_back(uv1.x);
             vertices.push_back(uv1.y);
 
-            // Á¤Á¡ µ¥ÀÌÅÍ Ãß°¡ (v2, uv2)
+            // ì •ì  ë°ì´í„° ì¶”ê°€ (v2, uv2)
             vertices.push_back(v2.x);
             vertices.push_back(v2.y);
             vertices.push_back(v2.z);
@@ -208,26 +221,26 @@ void loadObj(const std::string& filename,
             vertices.push_back(uv2.x);
             vertices.push_back(uv2.y);
 
-            // ÀÎµ¦½º Ãß°¡
+            // ì¸ë±ìŠ¤ ì¶”ê°€
             indices.push_back(indices.size());
             indices.push_back(indices.size());
             indices.push_back(indices.size());
 
-            // ÀçÁú ÀÎµ¦½º Ãß°¡
+            // ì¬ì§ˆ ì¸ë±ìŠ¤ ì¶”ê°€
             if (i / 3 < shape.mesh.material_ids.size()) {
                 materialIndices.push_back(shape.mesh.material_ids[i / 3]);
             }
             else {
-                materialIndices.push_back(-1); // ±âº»°ª
+                materialIndices.push_back(-1); // ê¸°ë³¸ê°’
             }
         }
     }
 
-    // ¹ı¼± º¤ÅÍ Á¤±ÔÈ­
+    // ë²•ì„  ë²¡í„° ì •ê·œí™”
     for (size_t i = 0; i < tempNormals.size(); ++i) {
         tempNormals[i] = glm::normalize(tempNormals[i]);
         if (glm::dot(tempNormals[i], glm::vec3(0.0f, 0.0f, 1.0f)) < 0) {
-            tempNormals[i] = -tempNormals[i]; // ¹İÀü
+            tempNormals[i] = -tempNormals[i]; // ë°˜ì „
         }
     }
 }
@@ -309,7 +322,7 @@ GLuint loadTexture(const char* path) {
     glGenTextures(1, &textureID);
 
     int width, height, nrChannels;
-    unsigned char* data = stbi_load(path, &width, &height, &nrChannels, 0); ///STBI_rgb ¶Ç´Â 0
+    unsigned char* data = stbi_load(path, &width, &height, &nrChannels, 0); ///STBI_rgb ë˜ëŠ” 0
     if (data) {
         std::cout << "Loaded texture: " << path << " (" << width << "x" << height << ", " << nrChannels << " channels)" << std::endl;
     }
@@ -321,8 +334,8 @@ GLuint loadTexture(const char* path) {
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
         glGenerateMipmap(GL_TEXTURE_2D);
 
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT); // SÃà ¹İº¹
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT); // TÃà ¹İº¹
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT); // Sì¶• ë°˜ë³µ
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT); // Tì¶• ë°˜ë³µ
 
 
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
@@ -342,9 +355,9 @@ void applyMaterial(int objIndex, int materialIndex) {
         glm::vec3 diffuse = glm::vec3(material.diffuse[0], material.diffuse[1], material.diffuse[2]);
         glm::vec3 specular = glm::vec3(material.specular[0], material.specular[1], material.specular[2]);
 
-        if (glm::length(ambient) == 0.0f) ambient = glm::vec3(0.2f); // ±âº»°ª ¼³Á¤
-        if (glm::length(diffuse) == 0.0f) diffuse = glm::vec3(0.8f); // ±âº» È®»ê»ö
-        if (glm::length(specular) == 0.0f) specular = glm::vec3(1.0f); // ±âº» ¹İ»ç±¤
+        if (glm::length(ambient) == 0.0f) ambient = glm::vec3(0.2f); // ê¸°ë³¸ê°’ ì„¤ì •
+        if (glm::length(diffuse) == 0.0f) diffuse = glm::vec3(0.8f); // ê¸°ë³¸ í™•ì‚°ìƒ‰
+        if (glm::length(specular) == 0.0f) specular = glm::vec3(1.0f); // ê¸°ë³¸ ë°˜ì‚¬ê´‘
 
         glUniform3fv(glGetUniformLocation(shaderID, "material.ambient"), 1, glm::value_ptr(ambient));
         glUniform3fv(glGetUniformLocation(shaderID, "material.diffuse"), 1, glm::value_ptr(diffuse));
@@ -352,7 +365,7 @@ void applyMaterial(int objIndex, int materialIndex) {
         glUniform1f(glGetUniformLocation(shaderID, "material.shininess"), material.shininess * 128.0f);
     }
     else {
-        // ±âº» ÀçÁú
+        // ê¸°ë³¸ ì¬ì§ˆ
         glm::vec3 defaultAmbient = glm::vec3(0.2f, 0.2f, 0.2f);
         glm::vec3 defaultDiffuse = glm::vec3(0.8f, 0.8f, 0.8f);
         glm::vec3 defaultSpecular = glm::vec3(1.0f, 1.0f, 1.0f);
@@ -366,20 +379,14 @@ void applyMaterial(int objIndex, int materialIndex) {
 
 void applyTextures() {
 
-    // À°¸éÃ¼ ÅØ½ºÃ³ (6¸é)
-    textures[0] = loadTexture("cube.png"); // ¾Õ¸é
-    textures[1] = loadTexture("cube.png"); // µŞ¸é
-    textures[2] = loadTexture("cube.png"); // À­¸é
-    textures[3] = loadTexture("cube.png"); // ¾Æ·§¸é
-    textures[4] = loadTexture("cube.png"); // ¿ŞÂÊ¸é
-    textures[5] = loadTexture("cube.png"); // ¿À¸¥ÂÊ¸é
+    // ìœ¡ë©´ì²´ í…ìŠ¤ì²˜ (6ë©´)
+    textures[0] = loadTexture("cube.png"); // ì•ë©´
+    textures[1] = loadTexture("cube.png"); // ë’·ë©´
+    textures[2] = loadTexture("cube.png"); // ìœ—ë©´
+    textures[3] = loadTexture("cube.png"); // ì•„ë«ë©´
+    textures[4] = loadTexture("cube.png"); // ì™¼ìª½ë©´
+    textures[5] = loadTexture("cube.png"); // ì˜¤ë¥¸ìª½ë©´
 
-    // »ç°¢»Ô ÅØ½ºÃ³ (4¸é + ¹Ø¸é)
-    pyramidTextures[0] = loadTexture("pyramid.png"); // ¾Õ¸é
-    pyramidTextures[1] = loadTexture("pyramid.png"); // µŞ¸é
-    pyramidTextures[2] = loadTexture("pyramid.png"); // ¿ŞÂÊ¸é
-    pyramidTextures[3] = loadTexture("pyramid.png"); // ¿À¸¥ÂÊ¸é
-    pyramidTextures[4] = loadTexture("pyramid.png"); // ¹Ø¸é
 
     bgtextures[0] = loadTexture("sky.png");
     bgtextures[1] = loadTexture("sky.png");
@@ -389,45 +396,23 @@ void applyTextures() {
     bgtextures[5] = loadTexture("sky.png");
 
     helitextures[0] = loadTexture("helitexture.png");
+    wingtextures[0] = loadTexture("wing.png");
 }
 
-void updateLightPosition() {
-    if (isLightOrbiting) {
-        float orbitSpeed = 0.005f;
+// í—¬ë¦¬ì½¥í„°ë¥¼ ë”°ë¼ë‹¤ë‹ˆëŠ” ì¹´ë©”ë¼ ì—…ë°ì´íŠ¸ í•¨ìˆ˜
+void updateCameraPosition() {
+    float distanceBehindHelicopter = 10.0f; // í—¬ë¦¬ì½¥í„° ë’¤ìª½ ê±°ë¦¬
+    float heightAboveHelicopter = 5.0f;     // í—¬ë¦¬ì½¥í„° ìœ„ìª½ ë†’ì´
 
-        // °øÀü °¢µµ ¾÷µ¥ÀÌÆ®
-        lightOrbitAngle += isOrbitingClockwise ? orbitSpeed : -orbitSpeed;
+    // ì¹´ë©”ë¼ ìœ„ì¹˜ë¥¼ í—¬ë¦¬ì½¥í„° ê¸°ì¤€ìœ¼ë¡œ ì„¤ì •
+    cameraPos = glm::vec3(heliX, heliY + heightAboveHelicopter, 5.0f - distanceBehindHelicopter);
 
-        // °¢µµ Á¤»óÈ­
-        if (lightOrbitAngle > glm::two_pi<float>()) lightOrbitAngle -= glm::two_pi<float>();
-        else if (lightOrbitAngle < 0.0f) lightOrbitAngle += glm::two_pi<float>();
+    // ì¹´ë©”ë¼ ë°©í–¥ì€ í—¬ë¦¬ì½¥í„°ë¥¼ ë°”ë¼ë³´ë„ë¡ ì„¤ì •
+    glm::vec3 helicopterPosition = glm::vec3(heliX, heliY, 5.0f);
+    cameraFront = glm::normalize(helicopterPosition - cameraPos);
 
-        // XZ Æò¸é¿¡¼­ÀÇ °øÀü À§Ä¡ °è»ê (Y°ª À¯Áö)
-        lightPos.x = lightOrbitRadius * cos(lightOrbitAngle);
-        lightPos.z = lightOrbitRadius * sin(lightOrbitAngle);
-    }
-
-    glutPostRedisplay();
-}
-
-void rotateCameraAroundCenter(float angle) {
-    // ÇöÀç Ä«¸Ş¶ó°¡ ¹Ù¶óº¸°í ÀÖ´Â yÁÂÇ¥¸¦ ÀúÀå
-    float targetY = cameraPos.y;
-
-    // Ä«¸Ş¶ó¿Í ¹Ù¶óº¸´Â Áß½É °£ÀÇ º¤ÅÍ °è»ê (xz Æò¸é¿¡¼­¸¸ È¸Àü)
-    glm::vec3 toCamera = cameraPos - glm::vec3(0.0f, targetY, 0.0f);
-    float distance = glm::length(toCamera); // Ä«¸Ş¶ó¿Í Áß½É °£ÀÇ °Å¸®
-    float currentAngle = atan2(toCamera.z, toCamera.x); // ÇöÀç °¢µµ °è»ê
-
-    // »õ·Î¿î °¢µµ °è»ê
-    currentAngle += angle;
-
-    // »õ·Î¿î À§Ä¡ °è»ê (y°ªÀº °íÁ¤)
-    cameraPos.x = distance * cos(currentAngle);
-    cameraPos.z = distance * sin(currentAngle);
-
-    // Ä«¸Ş¶ó ¹æÇâ ¾÷µ¥ÀÌÆ® (ÇöÀç ¹Ù¶óº¸´Â yÁÂÇ¥¸¦ À¯Áö)
-    cameraFront = glm::normalize(glm::vec3(0.0f, targetY, 0.0f) - cameraPos);
+    // ì¹´ë©”ë¼ì˜ ìƒí–¥ ë²¡í„°ëŠ” ê³ ì •
+    cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
 }
 
 void drawScene() {
@@ -438,21 +423,16 @@ void drawScene() {
     glEnable(GL_CULL_FACE);
 
     glUseProgram(shaderID);
-
-    // Ä«¸Ş¶ó ¹× Åõ¿µ Çà·Ä ¼³Á¤
+    updateCameraPosition();
+    // ì¹´ë©”ë¼ ë° íˆ¬ì˜ í–‰ë ¬ ì„¤ì •
     glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
     glUniformMatrix4fv(glGetUniformLocation(shaderID, "view"), 1, GL_FALSE, glm::value_ptr(view));
 
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, 100.0f);
     glUniformMatrix4fv(glGetUniformLocation(shaderID, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
 
-    // È­¸é ±âÁØ È¸ÀüÀ» µ¶¸³ÀûÀ¸·Î Àû¿ë
-    glm::mat4 rotationXMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(rotationX), glm::vec3(1.0f, 0.0f, 0.0f)); // XÃà È¸Àü
-    glm::mat4 rotationYMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(rotationY), glm::vec3(0.0f, 1.0f, 0.0f)); // YÃà È¸Àü
 
-    // È¸ÀüÀ» º´ÇÕ (¼ø¼­ »ó°ü¾øÀÌ µ¿ÀÛ)
-    glm::mat4 model = rotationYMatrix * rotationXMatrix;
-    // Á¶¸í ¼³Á¤
+    // ì¡°ëª… ì„¤ì •
     glm::vec3 lightAmbient = lightColors[currentLightColorIndex] * lightIntensity;
     glm::vec3 lightDiffuse = lightColors[currentLightColorIndex] * lightIntensity;
     glm::vec3 lightSpecular = lightColors[currentLightColorIndex] * lightIntensity;
@@ -465,7 +445,7 @@ void drawScene() {
     glUniform3fv(glGetUniformLocation(shaderID, "viewPos"), 1, glm::value_ptr(cameraPos));
     glUniform1f(glGetUniformLocation(shaderID, "uvScale"), 1.0f);
 
-    // Á¶¸í ·»´õ¸µ
+    // ì¡°ëª… ë Œë”ë§
 
     glDepthMask(GL_FALSE);
     glBindVertexArray(objVAOs[0]);
@@ -480,29 +460,52 @@ void drawScene() {
     glDepthMask(GL_TRUE);
 
     glBindVertexArray(objVAOs[1]);
-    // Çï¸®ÄßÅÍ ±×¸®±â
+    // í—¬ë¦¬ì½¥í„° ê·¸ë¦¬ê¸°
     glm::mat4 heliModel = glm::mat4(1.0f);
 
-    // Çï¸®ÄßÅÍ À§Ä¡ ¼³Á¤
-    heliModel = glm::translate(heliModel, glm::vec3(0.0f, 2.0f, 5.0f));
-
-    // Å°º¸µå ÀÔ·Â¿¡ µû¶ó È¸Àü Àû¿ë (XÃà, YÃà)
-    heliModel = glm::rotate(heliModel, glm::radians(rotationX), glm::vec3(1.0f, 0.0f, 0.0f)); // XÃà È¸Àü
-    heliModel = glm::rotate(heliModel, glm::radians(rotationY), glm::vec3(0.0f, 1.0f, 0.0f)); // YÃà È¸Àü
-
-    // Å©±â Á¶Á¤
+    // í—¬ë¦¬ì½¥í„° ìœ„ì¹˜ ì„¤ì •
+    heliModel = glm::translate(heliModel, glm::vec3(heliX, heliY, 5.0f));
+    // í¬ê¸° ì¡°ì •
     heliModel = glm::scale(heliModel, glm::vec3(1.0f));
 
-    // ½¦ÀÌ´õ¿¡ ¸ğµ¨ Çà·Ä Àü¼Û
+    // ì‰ì´ë”ì— ëª¨ë¸ í–‰ë ¬ ì „ì†¡
     glUniformMatrix4fv(glGetUniformLocation(shaderID, "model"), 1, GL_FALSE, glm::value_ptr(heliModel));
-    applyMaterial(4, 0); // Çï¸®ÄßÅÍ ÀçÁú Àû¿ë
+    applyMaterial(4, 0); // í—¬ë¦¬ì½¥í„° ì¬ì§ˆ ì ìš©
     glBindTexture(GL_TEXTURE_2D, helitextures[0]);
-    // Çï¸®ÄßÅÍ ±×¸®±â
+    // í—¬ë¦¬ì½¥í„° ê·¸ë¦¬ê¸°
     glDrawElements(GL_TRIANGLES, objIndexCounts[1], GL_UNSIGNED_INT, 0);
 
 
+    glBindVertexArray(0);
+    // ë‚ ê°œ ê·¸ë¦¬ê¸°
+    glBindVertexArray(objVAOs[2]);
+    glm::mat4 wingModel = heliModel; // í—¬ë¦¬ì½¥í„° ëª¨ë¸ í–‰ë ¬ì„ ê¸°ë°˜ìœ¼ë¡œ í•¨
+    wingModel = glm::translate(heliModel, glm::vec3(0.0f, 0.1f, 0.0f));
+    // ë‚ ê°œì˜ ê°œë³„ íšŒì „ (í—¬ë¦¬ì½¥í„°ì™€ í•¨ê»˜ íšŒì „í•˜ë©´ì„œ ì¶”ê°€ì ì¸ íšŒì „)
+    static float wingRotationAngle = 0.0f;
+    wingRotationAngle += 0.0001f; // ë‚ ê°œì˜ íšŒì „ ì†ë„ (ìŒìˆ˜ë¡œ ì„¤ì •í•˜ì—¬ ë°˜ì‹œê³„ ë°©í–¥))
+    if (isWingAutoRotate) {
+        wingRotationAngle += wingRotationSpeed; // í˜„ì¬ ì†ë„ë¡œ íšŒì „
+        if (wingRotationAngle > 360.0f) {
+            wingRotationAngle -= 360.0f;
+        }
+    }
+
+    // ë‚ ê°œì˜ íšŒì „ í–‰ë ¬ ì ìš©
+    wingModel = glm::rotate(wingModel, glm::radians(wingRotationAngle), glm::vec3(0.0f, 1.0f, 0.0f));
+
+    // ë‚ ê°œì˜ í¬ê¸° ì¡°ì • (í•„ìš”ì— ë”°ë¼ ì¡°ì •)
+    wingModel = glm::scale(wingModel, glm::vec3(0.8f));
+    // ì‰ì´ë”ì— ëª¨ë¸ í–‰ë ¬ ì „ì†¡
+    glUniformMatrix4fv(glGetUniformLocation(shaderID, "model"), 1, GL_FALSE, glm::value_ptr(wingModel));
+    applyMaterial(4, 0); // ë‚ ê°œ ì¬ì§ˆ ì ìš©
+    glBindTexture(GL_TEXTURE_2D, wingtextures[0]);
+    // ë‚ ê°œ ê·¸ë¦¬ê¸°
+    glDrawElements(GL_TRIANGLES, objIndexCounts[2], GL_UNSIGNED_INT, 0);
 
     glBindVertexArray(0);
+
+
     glutSwapBuffers();
 }
 
@@ -516,42 +519,122 @@ GLvoid Reshape(int w, int h) {
 }
 
 GLvoid KeyBoard(unsigned char key, int x, int y) {
-    const float rotationSpeed = 5.0f; // È¸Àü ¼Óµµ (°¢µµ)
+    const float movementStep = 0.1f; // ì´ë™ ê°„ê²©
+    auto currentTime = std::chrono::steady_clock::now(); // í˜„ì¬ ì‹œê°„ ì €ì¥
+
     switch (key) {
-    case 'c':
-        currentShape = 'c'; // À°¸éÃ¼ ¼±ÅÃ
-        break;
-    case 'p':
-        currentShape = 'p'; // »ç°¢»Ô ¼±ÅÃ
-        break;
     case 'q':
-        exit(0); // ÇÁ·Î±×·¥ Á¾·á
+        exit(0); // í”„ë¡œê·¸ë¨ ì¢…ë£Œ
         break;
-    case 's': // ÃÊ±âÈ­
-        rotationX = 0.0f;
-        rotationY = 0.0f;
-        std::cout << "Rotation reset to initial state." << std::endl;
-        break;
-    case 'x': // xÃàÀ» ±âÁØÀ¸·Î ½Ã°è ¹æÇâ È¸Àü
-        rotationX += rotationSpeed;
-        break;
-    case 'X': // xÃàÀ» ±âÁØÀ¸·Î ¹İ½Ã°è ¹æÇâ È¸Àü
-        rotationX -= rotationSpeed;
-        break;
-    case 'y': // yÃàÀ» ±âÁØÀ¸·Î ½Ã°è ¹æÇâ È¸Àü
-        rotationY += rotationSpeed;
-        break;
-    case 'Y': // yÃàÀ» ±âÁØÀ¸·Î ¹İ½Ã°è ¹æÇâ È¸Àü
-        rotationY -= rotationSpeed;
+    case 32: // ìŠ¤í˜ì´ìŠ¤ë°” ì…ë ¥ì‹œ ë‚ ê°œ ìë™ íšŒì „ í† ê¸€ ë° ì¡°ì‘ í™œì„±í™” ì‹œì‘
+        isWingAutoRotate = !isWingAutoRotate;
+        lastRKeyTime = currentTime; // r í‚¤ë¥¼ ëˆ„ë¥¸ ì‹œê°„ì„ ì €ì¥
+        isRKeyPressed = true;       // r í‚¤ê°€ ëˆŒë ¸ìŒì„ ê¸°ë¡
+        isHelicopterControlEnabled = false; // r ì…ë ¥ ì‹œ ì¡°ì‘ ë¹„í™œì„±í™”
+        std::cout << "Helicopter control will be enabled after 15 seconds." << std::endl;
+        if (isWingAutoRotate) {
+            wingRotationSpeed = 0.0f; // ì´ˆê¸° ì†ë„ ì„¤ì •
+            std::cout << "Wing auto rotation enabled with acceleration." << std::endl;
+        }
+        else {
+            std::cout << "Wing auto rotation disabled." << std::endl;
+        }
         break;
 
-    default:
+        // ìœ„ë¡œ ì´ë™
+    case 'w':
+        if (!isRKeyPressed) {
+            std::cout << "Cannot move. Press 'r' to enable helicopter control." << std::endl;
+        }
+        else if (isHelicopterControlEnabled) {
+            heliY += movementStep;
+            std::cout << "Helicopter moved up. Current Y position: " << heliY << std::endl;
+        }
+        else {
+            auto elapsedTime = std::chrono::duration_cast<std::chrono::seconds>(currentTime - lastRKeyTime).count();
+            if (elapsedTime >= 15) {
+                isHelicopterControlEnabled = true;
+                heliY += movementStep;
+                std::cout << "Helicopter moved up. Current Y position: " << heliY << std::endl;
+            }
+            else {
+                std::cout << "Cannot move. Please wait for " << (15 - elapsedTime) << " seconds." << std::endl;
+            }
+        }
+        break;
+
+        // ì•„ë˜ë¡œ ì´ë™
+    case 's':
+        if (!isRKeyPressed) {
+            std::cout << "Cannot move. Press 'r' to enable helicopter control." << std::endl;
+        }
+        else if (isHelicopterControlEnabled) {
+            heliY -= movementStep;
+            std::cout << "Helicopter moved down. Current Y position: " << heliY << std::endl;
+        }
+        else {
+            auto elapsedTime = std::chrono::duration_cast<std::chrono::seconds>(currentTime - lastRKeyTime).count();
+            if (elapsedTime >= 15) {
+                isHelicopterControlEnabled = true;
+                heliY -= movementStep;
+                std::cout << "Helicopter moved down. Current Y position: " << heliY << std::endl;
+            }
+            else {
+                std::cout << "Cannot move. Please wait for " << (15 - elapsedTime) << " seconds." << std::endl;
+            }
+        }
+        break;
+
+        // ì˜¤ë¥¸ìª½ìœ¼ë¡œ ì´ë™
+    case 'd':
+        if (!isRKeyPressed) {
+            std::cout << "Cannot move. Press 'r' to enable helicopter control." << std::endl;
+        }
+        else if (isHelicopterControlEnabled) {
+            heliX -= movementStep;
+            std::cout << "Helicopter moved left. Current X position: " << heliX << std::endl;
+        }
+        else {
+            auto elapsedTime = std::chrono::duration_cast<std::chrono::seconds>(currentTime - lastRKeyTime).count();
+            if (elapsedTime >= 15) {
+                isHelicopterControlEnabled = true;
+                heliX -= movementStep;
+                std::cout << "Helicopter moved left. Current X position: " << heliX << std::endl;
+            }
+            else {
+                std::cout << "Cannot move. Please wait for " << (15 - elapsedTime) << " seconds." << std::endl;
+            }
+        }
+        break;
+
+        // ì™¼ìª½ìœ¼ë¡œ ì´ë™
+    case 'a':
+        if (!isRKeyPressed) {
+            std::cout << "Cannot move. Press 'r' to enable helicopter control." << std::endl;
+        }
+        else if (isHelicopterControlEnabled) {
+            heliX += movementStep;
+            std::cout << "Helicopter moved right. Current X position: " << heliX << std::endl;
+        }
+        else {
+            auto elapsedTime = std::chrono::duration_cast<std::chrono::seconds>(currentTime - lastRKeyTime).count();
+            if (elapsedTime >= 15) {
+                isHelicopterControlEnabled = true;
+                heliX += movementStep;
+                std::cout << "Helicopter moved right. Current X position: " << heliX << std::endl;
+            }
+            else {
+                std::cout << "Cannot move. Please wait for " << (15 - elapsedTime) << " seconds." << std::endl;
+            }
+        }
         break;
     }
-    // È­¸é °»½Å ¿äÃ»
+    // ì¹´ë©”ë¼ ìœ„ì¹˜ ì—…ë°ì´íŠ¸
+    updateCameraPosition();
+
+    // í™”ë©´ ê°±ì‹  ìš”ì²­
     glutPostRedisplay();
 }
-
 
 int main(int argc, char** argv) {
     glutInit(&argc, argv);
@@ -573,15 +656,27 @@ int main(int argc, char** argv) {
 
     InitObj("cube.obj", 0);
     InitObj("heli.obj", 1);
+    InitObj("wing.obj", 2);
 
-    InitLightObj("cube.obj");
+    // ì¡°ì‘ ë¹„í™œì„±í™” ì´ˆê¸° ì„¤ì •
+    isHelicopterControlEnabled = false;
+    lastRKeyTime = std::chrono::steady_clock::now(); // í”„ë¡œê·¸ë¨ ì‹œì‘ ì‹œ ì´ˆê¸° ì‹œê°„ ì„¤ì •
+
 
     glutDisplayFunc(display);
     glutReshapeFunc(Reshape);
     glutKeyboardFunc(KeyBoard);
     glutIdleFunc([]() {
-        updateLightPosition();
+        if (isWingAutoRotate) {
+            // ë‚ ê°œì˜ íšŒì „ ì†ë„ ì¦ê°€
+            wingRotationSpeed += wingAcceleration;
+            if (wingRotationSpeed > 50.0f) { // ìµœëŒ€ ì†ë„ ì œí•œ
+                wingRotationSpeed = 50.0f;
+            }
+            glutPostRedisplay(); // í™”ë©´ ê°±ì‹  ìš”ì²­
+        }
         });
+
     glutMainLoop();
     return 0;
 }
